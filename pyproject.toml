@@ -1,0 +1,68 @@
+[project]
+name = "resume-tailoring-app"
+version = "0.1.0"
+description = "Streamlit app for resume parsing and AI tailoring"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "anthropic",
+    "beautifulsoup4",
+    "google-generativeai",
+    "httpx",
+    "jinja2",
+    "pydantic",
+    "pylatex",
+    "python-dotenv",
+    "streamlit",
+    "watchdog>=6.0.0",
+]
+
+[tool.uv]
+package = false
+default-groups = ["dev"]
+
+[dependency-groups]
+dev = [
+    "black>=26.3.1",
+    "isort>=8.0.1",
+    "mypy>=1.20.1",
+    "pre-commit>=4.5.1",
+    "pylint>=4.0.5",
+]
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+
+[tool.isort]
+profile = "black"
+line_length = 100
+skip = [".venv"]
+
+[tool.mypy]
+python_version = "3.11"
+explicit_package_bases = true
+namespace_packages = true
+warn_unused_ignores = true
+exclude = "(^|/)\\.venv/"
+
+[tool.pylint.main]
+py-version = "3.11"
+jobs = 1
+max-line-length = 100
+
+[tool.pylint."messages control"]
+disable = [
+    "C0114",
+    "C0115",
+    "C0116",
+    "R0903",
+    "R0912",
+    "R0913",
+    "R0914",
+    "R0915",
+    "R0917",
+    "W0603",
+    "W0718",
+    "W1510",
+]

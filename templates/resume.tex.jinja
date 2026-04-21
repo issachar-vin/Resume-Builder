@@ -1,0 +1,27 @@
+{# Tailored Markdown → minimal LaTeX for pdflatex. Vendor class + CV samples: ../latex/ #}
+\documentclass[11pt]{article}
+\usepackage[margin=0.7in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\setlist[itemize]{leftmargin=1.5em}
+
+\title{Tailored Resume}
+\date{}
+
+\begin{document}
+\maketitle
+
+\noindent\textbf{Target Company:} {{ company or "N/A" }} \\
+\textbf{Target Role:} {{ title or "N/A" }} \\
+\textbf{Generated:} {{ generated_on }}
+
+\vspace{1em}
+\section*{Tailored Content (Markdown Source)}
+\begin{verbatim}
+{{ markdown_body }}
+\end{verbatim}
+
+\end{document}

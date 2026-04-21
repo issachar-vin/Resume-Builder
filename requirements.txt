@@ -1,0 +1,9 @@
+anthropic
+google-generativeai
+streamlit
+httpx
+beautifulsoup4
+python-dotenv
+pydantic
+jinja2
+pylatex

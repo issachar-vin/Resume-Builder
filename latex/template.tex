@@ -1,0 +1,128 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Twenty Seconds Resume/CV
+% LaTeX Template
+% Version 1.1 (8/1/17)
+%
+% This template has been downloaded from:
+% http://www.LaTeXTemplates.com
+%
+% Original author:
+% Carmine Spagnuolo (cspagnuolo@unisa.it) with major modifications by 
+% Vel (vel@LaTeXTemplates.com)
+%
+% License:
+% The MIT License (see included LICENSE file)
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%----------------------------------------------------------------------------------------
+%	PACKAGES AND OTHER DOCUMENT CONFIGURATIONS
+%----------------------------------------------------------------------------------------
+
+\documentclass[letterpaper]{twentysecondcv} % a4paper for A4
+
+%----------------------------------------------------------------------------------------
+%	 PERSONAL INFORMATION
+%----------------------------------------------------------------------------------------
+
+% If you don't need one or more of the below, just remove the content leaving the command, e.g. \cvnumberphone{}
+
+\profilepic{izzy.JPG} % Profile picture (replace with your image)
+\cvname{Issachar\\Vinajeras} % Your name
+\cvjobtitle{Full-Stack Developer} % Job title/career
+\cvdate{January 29, 2025} % Date of birth (Update accordingly)
+\cvaddress{Miami, FL} % Short address/location
+\cvnumberphone{+1 786-546-9004} % Phone number
+\cvsite{http://vinajeras.com} % Personal website
+\cvmail{issacharv@gmail.com} % Email address
+
+%----------------------------------------------------------------------------------------
+
+\begin{document}
+
+%----------------------------------------------------------------------------------------
+%	 ABOUT ME
+%----------------------------------------------------------------------------------------
+
+\aboutme{A full-stack engineer passionate about expanding knowledge in upcoming technologies and open-source contributions. Currently working as a Software Engineer at UKG, with experience in building scalable platforms, enhancing user experiences, and driving customer value through technology.} 
+
+%----------------------------------------------------------------------------------------
+%	 SKILLS
+%----------------------------------------------------------------------------------------
+
+% Skill bar section, each skill must have a value between 0 an 6 (float)
+\skills{{JavaScript/4},{Python/5},{TypeScript/3},{React/3},{Node.js/3},{MongoDB/4},{Angular/4},{AWS/4},{GCP/3},{Docker/4}}
+
+%------------------------------------------------
+
+
+
+%----------------------------------------------------------------------------------------
+
+\makeprofile % Print the sidebar
+
+%----------------------------------------------------------------------------------------
+%	 INTERESTS
+%----------------------------------------------------------------------------------------
+
+\section{Interests}
+
+Open-source contributions, Full-Stack Engineering, Scalability, Performance Optimization, Cloud Computing.
+
+%----------------------------------------------------------------------------------------
+%	 EDUCATION
+%----------------------------------------------------------------------------------------
+
+\section{Education}
+
+\begin{twenty} % Environment for a list with descriptions
+	\twentyitem{2016-2021}{B.Sc. in Computer Science}{Florida International University, Miami, FL}{Graduated Magna Cum Laude with a 3.75 GPA.}
+\end{twenty}
+
+%----------------------------------------------------------------------------------------
+%	 PUBLICATIONS
+%----------------------------------------------------------------------------------------
+
+\section{Publications}
+
+\begin{twentyshort} % Environment for a short list with no descriptions
+	\twentyitemshort{2024}{Improving User Experience with AG Grid in Angular.}
+	\twentyitemshort{2023}{Optimizing Cloud Infrastructure with Kubernetes and Docker.}
+\end{twentyshort}
+
+%----------------------------------------------------------------------------------------
+%	 AWARDS
+%----------------------------------------------------------------------------------------
+
+\section{Awards}
+
+\begin{twentyshort} % Environment for a short list with no descriptions
+	\twentyitemshort{2024}{Employee of the Quarter, UKG.}
+	\twentyitemshort{2023}{Best Backend Developer, Nomad Health.}
+\end{twentyshort}
+
+%----------------------------------------------------------------------------------------
+%	 EXPERIENCE
+%----------------------------------------------------------------------------------------
+
+\section{Experience}
+
+\begin{twenty} % Environment for a list with descriptions
+	\twentyitem{Nov 2023 - Present}{Software Engineer}{UKG, Weston, FL}{Led full-stack feature implementation with AG Grid. Deployed web-based application into Kubernetes. Developed and maintained Java + Spring Boot backend with REST APIs and RabbitMQ within a CQRS-based architecture.}
+	\twentyitem{May 2022 - Oct 2023}{Software Engineer II}{Nomad Health, New York, NY}{Automated travel nurse hiring process. Developed APIs using Flask, MongoDB, and Redis. Integrated APIs with React and Next.js. Developed asynchronous tasks with Beat.}
+	\twentyitem{Apr 2014 - May 2022}{Lead Systems Engineer}{Globalrose.com LLC, Miami, FL}{Managed Linux and Windows servers, automated tasks, enhanced e-commerce features, led two developers, modernized the frontend with JavaScript and jQuery.}
+\end{twenty}
+
+%----------------------------------------------------------------------------------------
+%	 OTHER INFORMATION
+%----------------------------------------------------------------------------------------
+
+\section{Other Information}
+
+\subsection{Review}
+
+I am focused on delivering stories on time with quality and enhancing the performance of systems in a collaborative environment. I have developed several key features, including those aimed at improving CSAT and reducing TTL.
+
+%----------------------------------------------------------------------------------------
+
+\end{document}
