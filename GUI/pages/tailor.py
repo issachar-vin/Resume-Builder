@@ -15,6 +15,8 @@ from services.cache_manager import CacheManager, TailoredHistoryItem
 
 logger = logging.getLogger(__name__)
 
+_STAGED_PICK_UNSET = object()
+
 
 def _tailored_history_label(item: TailoredHistoryItem) -> str:
     return f"{item.company} — {item.title} · {item.updated_at:%Y-%m-%d %H:%M} UTC"
@@ -24,6 +26,50 @@ def latest_output_tex_path(cache_manager: CacheManager, entry: JobCacheEntry) ->
     company_slug = cache_manager.safe_slug(entry.summary.company or "company")
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d")
     return cache_manager.output_dir / f"{company_slug}_{stamp}.tex"
+
+
+def _ingest_job_posting_url(
+    app: TailoringAppContext,
+    url: str,
+    *,
+    cached_url_set: set[str],
+) -> None:
+    """
+    Run `get_job_data` (uses disk cache if present), set job + tailored state and notices.
+
+    Syncs the cached-URL selectbox on the *next* run via `JOB_CACHED_PICK_STAGED` (the widget key
+    cannot be set after the selectbox is instantiated).
+    """
+    trimmed = (url or "").strip()
+    if not trimmed:
+        raise ValueError("URL is empty.")
+
+    fetched_entry, from_cache = app.job_scraper.get_job_data(trimmed)
+    st.session_state[SessionKeys.JOB_ENTRY] = fetched_entry
+    cached_tailored = app.cache_manager.load_tailored_markdown(fetched_entry.hash)
+    if cached_tailored is not None:
+        st.session_state[SessionKeys.TAILORED_MARKDOWN] = cached_tailored
+        st.session_state[SessionKeys.LAST_TAILORED_TEX_PATH] = ""
+        st.session_state[SessionKeys.NOTICE_TAILORED_LOADED] = (
+            "Loaded saved tailored markdown from disk for this posting."
+        )
+    else:
+        st.session_state[SessionKeys.TAILORED_MARKDOWN] = ""
+        st.session_state[SessionKeys.LAST_TAILORED_TEX_PATH] = ""
+    if from_cache:
+        st.session_state[SessionKeys.NOTICE_JOB_SUMMARY] = (
+            "info",
+            f"Loaded cached job summary ({fetched_entry.hash}).",
+        )
+    else:
+        st.session_state[SessionKeys.NOTICE_JOB_SUMMARY] = (
+            "success",
+            f"Fetched and cached job summary ({fetched_entry.hash}).",
+        )
+    st.session_state[SessionKeys.JOB_URL_PENDING] = fetched_entry.url
+    pick_for_list = fetched_entry.url if fetched_entry.url in cached_url_set else ""
+    st.session_state[SessionKeys.JOB_CACHED_PICK_STAGED] = pick_for_list
+    st.session_state[SessionKeys.JOB_CACHED_PICK_PREV] = pick_for_list
 
 
 def _pop_job_posting_notices() -> None:
@@ -38,6 +84,8 @@ def _pop_job_posting_notices() -> None:
         st.success(st.session_state.pop(SessionKeys.NOTICE_TAILORED_LOADED))
     if SessionKeys.NOTICE_HISTORY_LOADED in st.session_state:
         st.success(st.session_state.pop(SessionKeys.NOTICE_HISTORY_LOADED))
+    if SessionKeys.NOTICE_CACHED_JOB_LOAD in st.session_state:
+        st.error(st.session_state.pop(SessionKeys.NOTICE_CACHED_JOB_LOAD))
 
 
 def render_tailor_page(app: TailoringAppContext) -> None:
@@ -73,35 +121,66 @@ def render_tailor_page(app: TailoringAppContext) -> None:
         st.session_state[SessionKeys.JOB_POSTING_URL] = pending_url
     _pop_job_posting_notices()
 
-    st.text_input("Job posting URL", placeholder="https://...", key=SessionKeys.JOB_POSTING_URL)
+    # Must run before st.selectbox(JOB_CACHED_PICK) — that key is locked after the widget.
+    staged = st.session_state.pop(SessionKeys.JOB_CACHED_PICK_STAGED, _STAGED_PICK_UNSET)
+    if staged is not _STAGED_PICK_UNSET:
+        st.session_state[SessionKeys.JOB_CACHED_PICK] = staged
+
+    job_caches = app.cache_manager.list_job_caches()
+    cached_url_set = {e.url for e in job_caches}
+    by_url = {e.url: e for e in job_caches}
+    n_cached = len(job_caches)
+    st.caption(
+        f"Job summaries on disk: **{n_cached}** (under `cache/jobs/`, no extra database). "
+        "Picking a past URL only reads cache — no re-fetch unless the file is missing."
+    )
+
+    st.text_input(
+        "New job URL (type here, then Fetch)",
+        placeholder="https://...",
+        key=SessionKeys.JOB_POSTING_URL,
+    )
+
+    if job_caches:
+
+        def _format_cached_url(url: str) -> str:
+            if not url:
+                return "— New URL: use the field above, or select a past job here —"
+            e = by_url[url]
+            c = (e.summary.company or "(company?)").strip() or "?"
+            t = (e.summary.title or "(title?)").strip() or "?"
+            at = f"{e.cached_at:%Y-%m-%d %H:%M} UTC" if e.cached_at else "?"
+            short = url if len(url) <= 64 else f"{url[:61]}…"
+            return f"{c} — {t}  ·  {at}  ·  {short}"
+
+        st.selectbox(
+            f"Or load a previously cached job URL ({n_cached})",
+            options=[""] + [e.url for e in job_caches],
+            key=SessionKeys.JOB_CACHED_PICK,
+            format_func=_format_cached_url,
+        )
+
+        pick = (st.session_state.get(SessionKeys.JOB_CACHED_PICK) or "").strip()
+        prev = (st.session_state.get(SessionKeys.JOB_CACHED_PICK_PREV) or "").strip()
+        if pick and pick != prev:
+            try:
+                logger.info("Load job from cache pick: url=%s", pick)
+                _ingest_job_posting_url(app, pick, cached_url_set=cached_url_set)
+                st.rerun()
+            except Exception as exc:
+                logger.exception("Load cached job from pick failed")
+                st.session_state[SessionKeys.JOB_CACHED_PICK_STAGED] = prev
+                st.session_state[SessionKeys.NOTICE_CACHED_JOB_LOAD] = str(exc)
+                st.rerun()
+        st.session_state[SessionKeys.JOB_CACHED_PICK_PREV] = (
+            st.session_state.get(SessionKeys.JOB_CACHED_PICK, "") or ""
+        )
 
     url_for_fetch = (st.session_state.get(SessionKeys.JOB_POSTING_URL) or "").strip()
     if st.button("Fetch / Summarize Job", disabled=not bool(url_for_fetch)):
         try:
             logger.info("Fetch job: url=%s", url_for_fetch)
-            fetched_entry, from_cache = app.job_scraper.get_job_data(url_for_fetch)
-            st.session_state[SessionKeys.JOB_ENTRY] = fetched_entry
-            cached_tailored = app.cache_manager.load_tailored_markdown(fetched_entry.hash)
-            if cached_tailored is not None:
-                st.session_state[SessionKeys.TAILORED_MARKDOWN] = cached_tailored
-                st.session_state[SessionKeys.LAST_TAILORED_TEX_PATH] = ""
-                st.session_state[SessionKeys.NOTICE_TAILORED_LOADED] = (
-                    "Loaded saved tailored markdown from disk for this posting."
-                )
-            else:
-                st.session_state[SessionKeys.TAILORED_MARKDOWN] = ""
-                st.session_state[SessionKeys.LAST_TAILORED_TEX_PATH] = ""
-            if from_cache:
-                st.session_state[SessionKeys.NOTICE_JOB_SUMMARY] = (
-                    "info",
-                    f"Loaded cached job summary ({fetched_entry.hash}).",
-                )
-            else:
-                st.session_state[SessionKeys.NOTICE_JOB_SUMMARY] = (
-                    "success",
-                    f"Fetched and cached job summary ({fetched_entry.hash}).",
-                )
-            st.session_state[SessionKeys.JOB_URL_PENDING] = fetched_entry.url
+            _ingest_job_posting_url(app, url_for_fetch, cached_url_set=cached_url_set)
             st.rerun()
         except Exception as exc:
             logger.exception("Job fetch/summarize failed")

@@ -8,7 +8,7 @@ import streamlit as st
 from GUI.app_context import TailoringAppContext
 from GUI.constants import DEFAULT_CLAUDE_PRESETS, DEFAULT_GEMINI_PRESETS
 from GUI.session_keys import SessionKeys
-from services.gemini_models import list_available_gemini_models
+from services.gemini_models import gemini_help_links, list_available_gemini_models
 
 logger = logging.getLogger(__name__)
 
@@ -81,9 +81,20 @@ def render_settings_page(app: TailoringAppContext) -> None:
     st.divider()
     st.subheader("Gemini: models for your API key")
     st.write(
-        "This calls Google's **`list_models`** API with your key — the authoritative list for "
-        "what you can use (not a hardcoded guess)."
+        "This calls Google's **`list_models`** API (same `Model` metadata as in the "
+        "[developer docs](https://ai.google.dev/api/models)): token limits, supported methods "
+        "(`generateContent`, `countTokens`, …), and default generation parameters."
     )
+    st.info(
+        "Google does **not** include your **remaining free-tier budget** or how many requests "
+        "you have used in the last minute in this response — only model capabilities. For "
+        "**rate limit tables** and **usage** for your key, use the official links below."
+    )
+    link_cols = st.columns(4)
+    for i, (label, url) in enumerate(gemini_help_links().items()):
+        with link_cols[i % 4]:
+            st.markdown(f"[{label}]({url})")
+
     if st.button("Fetch available Gemini models", disabled=not bool(app.settings.gemini_api_key)):
         try:
             rows = list_available_gemini_models(app.settings.gemini_api_key)
@@ -103,6 +114,28 @@ def render_settings_page(app: TailoringAppContext) -> None:
     if gemini_rows is not None:
         usable = [r for r in gemini_rows if r.supports_generate_content]
         current = st.session_state[SessionKeys.GEMINI_MODEL].strip()
+
+        def _row_table(r, *, preview_chars: int = 200) -> dict:
+            return {
+                "short id (set GEMINI_MODEL)": r.short_id,
+                "display name": r.display_name,
+                "version": r.version,
+                "base model id": r.base_model_id,
+                "input token limit": r.input_token_limit,
+                "output token limit": r.output_token_limit,
+                "generateContent": r.supports_generate_content,
+                "methods": ", ".join(r.supported_generation_methods),
+                "temperature": r.temperature,
+                "max_temperature": r.max_temperature,
+                "top_p": r.top_p,
+                "top_k": r.top_k,
+                "description (preview)": (
+                    (r.description[:preview_chars] + "…")
+                    if len(r.description) > preview_chars
+                    else r.description
+                ),
+            }
+
         if usable:
             ids = {r.short_id for r in usable}
             if current in ids:
@@ -114,28 +147,32 @@ def render_settings_page(app: TailoringAppContext) -> None:
                     f"Session Gemini model **`{current}`** is **not** among the listed models that "
                     "support `generateContent`. Pick another id or fetch the list again."
                 )
-            table = [
-                {
-                    "GEMINI_MODEL (short id)": r.short_id,
-                    "Display name": r.display_name,
-                    "API name": r.api_name,
-                }
-                for r in usable
-            ]
-            st.dataframe(table, use_container_width=True, hide_index=True)
-        else:
-            st.warning("No models reported `generateContent` — check API key and project access.")
-
-        with st.expander("All models returned (including without generateContent)"):
             st.dataframe(
-                [
-                    {
-                        "short id": r.short_id,
-                        "generateContent": r.supports_generate_content,
-                        "display_name": r.display_name,
-                    }
-                    for r in gemini_rows
-                ],
+                [_row_table(r) for r in usable],
                 use_container_width=True,
                 hide_index=True,
             )
+        else:
+            st.warning("No models reported `generateContent` — check API key and project access.")
+
+        with st.expander("All models (including those without `generateContent`)"):
+            st.dataframe(
+                [_row_table(r) for r in gemini_rows],
+                use_container_width=True,
+                hide_index=True,
+            )
+
+        with st.expander("Full JSON for one model (exact API fields from `list_models`)"):
+            st.caption(
+                "Pulled from the same response as the table: values match what the Gemini API "
+                "returns for that model (useful to compare with the docs or to debug)."
+            )
+            if not gemini_rows:
+                st.caption("No model rows in the last fetch.")
+            else:
+                by_id = {r.short_id: r for r in gemini_rows}
+                pick = st.selectbox(
+                    "Model", options=[r.short_id for r in gemini_rows], key="gemini_model_json_pick"
+                )
+                if pick in by_id:
+                    st.json(by_id[pick].raw)

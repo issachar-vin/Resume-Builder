@@ -14,6 +14,12 @@ class SessionKeys:
     LAST_TAILORED_TEX_PATH = "last_tailored_tex_path"
     TAILOR_BUSY = "tailor_busy"
     JOB_POSTING_URL = "job_posting_url"
+    # Cached job URL picklist (tailor page) — `list_job_caches()` / cache/jobs/*.json
+    JOB_CACHED_PICK = "job_cached_url_pick"
+    JOB_CACHED_PICK_PREV = "job_cached_url_pick_prev"
+    # Set before the selectbox is created; cannot set JOB_CACHED_PICK after the widget is built.
+    JOB_CACHED_PICK_STAGED = "job_cached_url_pick_staged"
+    NOTICE_CACHED_JOB_LOAD = "notice_cached_job_load"
     NOTICE_JOB_SUMMARY = "notice_job_summary"
     NOTICE_TAILORED_LOADED = "notice_tailored_loaded"
     NOTICE_HISTORY_LOADED = "notice_history_loaded"
