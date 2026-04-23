@@ -47,7 +47,10 @@ CLAUDE_TAILOR_SYSTEM = textwrap.dedent("""
       (0–2). Choose the two that best match the target role; merge related wins
       into a single strong bullet when needed. Prefer concrete scope, tech, and
       outcomes (metrics when present in source).
-    - **Summary:** Keep to **2–3 short sentences** (roughly ≤90 words total).
+    - **Summary:** Keep to **2–3 short sentences** (roughly ≤90 words total). Do **not** add
+      total "years of experience" or similar tenure phrasing (e.g. "10+ years", "5 years in …",
+      "over a decade"); the `## Experience` section already shows duration—focus on fit for
+      this role in capability terms, not a year count.
     - **Skills:** Keep `**Category**:` lines truthful; drop or demote skills not
       in the source. For this job you may **omit** whole categories that are
       irrelevant if that saves space—do not add new skills.
