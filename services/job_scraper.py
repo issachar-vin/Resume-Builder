@@ -17,6 +17,9 @@ from services.prompts import GEMINI_FORMAT_EXPERIENCE_BLOCK, GEMINI_JOB_POSTING_
 
 logger = logging.getLogger(__name__)
 
+# Minimum pasted characters for manual summarization (avoid empty / accidental submits).
+MIN_MANUAL_PASTE_CHARS = 80
+
 
 class JobScraperService:
     def __init__(self, settings: Settings, cache_manager: CacheManager) -> None:
@@ -42,10 +45,44 @@ class JobScraperService:
             cached_at=datetime.now(timezone.utc),
             raw_text_length=len(raw_text),
             summary=summary,
+            source="url",
         )
         self.cache_manager.save_job_cache(entry)
         logger.info("Job summarized: company=%s title=%s", summary.company, summary.title)
         return entry, False
+
+    def summarize_pasted_posting(self, job_url: str, pasted_text: str) -> JobCacheEntry:
+        """
+        Build job JSON from user-pasted posting text, tied to the listing URL (same cache key
+        as URL fetches: `url_hash` on the URL). Overwrites any existing `cache/jobs` entry for
+        that URL. Does not re-read from cache before summarizing.
+        """
+        trimmed_url = (job_url or "").strip()
+        if not trimmed_url:
+            raise ValueError(
+                "Job URL is required so the listing is linked in your cache and tailoring."
+            )
+        if not self.settings.gemini_api_key:
+            raise ValueError("GEMINI_API_KEY is required for job summarization.")
+        raw = self._compact_visible_text(pasted_text)
+        if len(raw) < MIN_MANUAL_PASTE_CHARS:
+            raise ValueError(
+                f"Pasted text is too short ({len(raw)} characters). "
+                f"Add at least {MIN_MANUAL_PASTE_CHARS} characters of the job description."
+            )
+        logger.info("Summarizing pasted job text url=%s raw_len=%s", trimmed_url, len(raw))
+        summary = self._summarize_job(raw)
+        entry = JobCacheEntry(
+            url=trimmed_url,
+            hash=self.cache_manager.url_hash(trimmed_url),
+            cached_at=datetime.now(timezone.utc),
+            raw_text_length=len(raw),
+            summary=summary,
+            source="manual",
+        )
+        self.cache_manager.save_job_cache(entry)
+        logger.info("Pasted job summarized: company=%s title=%s", summary.company, summary.title)
+        return entry
 
     @staticmethod
     def _compact_visible_text(text: str) -> str:

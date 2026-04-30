@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -21,6 +22,10 @@ class JobCacheEntry(BaseModel):
     cached_at: datetime
     raw_text_length: int
     summary: JobData
+    source: Literal["url", "manual"] = Field(
+        default="url",
+        description="url: text from HTTP fetch; manual: user pasted the posting (same listing URL).",
+    )
 
 
 class UsageStats(BaseModel):

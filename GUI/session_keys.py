@@ -14,6 +14,9 @@ class SessionKeys:
     LAST_TAILORED_TEX_PATH = "last_tailored_tex_path"
     TAILOR_BUSY = "tailor_busy"
     JOB_POSTING_URL = "job_posting_url"
+    # "url" | "paste" — tailor page: fetch HTML vs paste job description text
+    JOB_INPUT_MODE = "job_input_mode"
+    JOB_PASTE_TEXT = "job_paste_text"
     # Cached job URL picklist (tailor page) — `list_job_caches()` / cache/jobs/*.json
     JOB_CACHED_PICK = "job_cached_url_pick"
     JOB_CACHED_PICK_PREV = "job_cached_url_pick_prev"

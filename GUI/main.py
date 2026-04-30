@@ -98,6 +98,10 @@ class ResumeTailoringApp:
             st.session_state[SessionKeys.TAILOR_BUSY] = False
         if SessionKeys.JOB_POSTING_URL not in st.session_state:
             st.session_state[SessionKeys.JOB_POSTING_URL] = ""
+        if SessionKeys.JOB_INPUT_MODE not in st.session_state:
+            st.session_state[SessionKeys.JOB_INPUT_MODE] = "url"
+        if SessionKeys.JOB_PASTE_TEXT not in st.session_state:
+            st.session_state[SessionKeys.JOB_PASTE_TEXT] = ""
 
 
 def run_app() -> None:

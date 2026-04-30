@@ -12,6 +12,7 @@ from GUI.app_context import TailoringAppContext
 from GUI.session_keys import SessionKeys
 from models.job import JobCacheEntry
 from services.cache_manager import CacheManager, TailoredHistoryItem
+from services.job_scraper import MIN_MANUAL_PASTE_CHARS
 
 logger = logging.getLogger(__name__)
 
@@ -28,25 +29,19 @@ def latest_output_tex_path(cache_manager: CacheManager, entry: JobCacheEntry) ->
     return cache_manager.output_dir / f"{company_slug}_{stamp}.tex"
 
 
-def _ingest_job_posting_url(
+def _apply_job_entry_to_session(
     app: TailoringAppContext,
-    url: str,
+    entry: JobCacheEntry,
     *,
+    from_cache: bool,
     cached_url_set: set[str],
 ) -> None:
     """
-    Run `get_job_data` (uses disk cache if present), set job + tailored state and notices.
-
-    Syncs the cached-URL selectbox on the *next* run via `JOB_CACHED_PICK_STAGED` (the widget key
-    cannot be set after the selectbox is instantiated).
+    After `get_job_data` or `summarize_pasted_posting`, push state + notices. Stages the cached
+    job selectbox for the *next* run (widget key may not be set after the selectbox is built).
     """
-    trimmed = (url or "").strip()
-    if not trimmed:
-        raise ValueError("URL is empty.")
-
-    fetched_entry, from_cache = app.job_scraper.get_job_data(trimmed)
-    st.session_state[SessionKeys.JOB_ENTRY] = fetched_entry
-    cached_tailored = app.cache_manager.load_tailored_markdown(fetched_entry.hash)
+    st.session_state[SessionKeys.JOB_ENTRY] = entry
+    cached_tailored = app.cache_manager.load_tailored_markdown(entry.hash)
     if cached_tailored is not None:
         st.session_state[SessionKeys.TAILORED_MARKDOWN] = cached_tailored
         st.session_state[SessionKeys.LAST_TAILORED_TEX_PATH] = ""
@@ -57,19 +52,50 @@ def _ingest_job_posting_url(
         st.session_state[SessionKeys.TAILORED_MARKDOWN] = ""
         st.session_state[SessionKeys.LAST_TAILORED_TEX_PATH] = ""
     if from_cache:
+        src = " (from pasted text)" if entry.source == "manual" else ""
         st.session_state[SessionKeys.NOTICE_JOB_SUMMARY] = (
             "info",
-            f"Loaded cached job summary ({fetched_entry.hash}).",
+            f"Loaded cached job summary ({entry.hash}){src}.",
+        )
+    elif entry.source == "manual":
+        st.session_state[SessionKeys.NOTICE_JOB_SUMMARY] = (
+            "success",
+            f"Summarized pasted text and saved job cache ({entry.hash}). "
+            f"Linked to the listing URL below.",
         )
     else:
         st.session_state[SessionKeys.NOTICE_JOB_SUMMARY] = (
             "success",
-            f"Fetched and cached job summary ({fetched_entry.hash}).",
+            f"Fetched and cached job summary ({entry.hash}).",
         )
-    st.session_state[SessionKeys.JOB_URL_PENDING] = fetched_entry.url
-    pick_for_list = fetched_entry.url if fetched_entry.url in cached_url_set else ""
+    st.session_state[SessionKeys.JOB_URL_PENDING] = entry.url
+    pick_for_list = entry.url if (entry.url in cached_url_set or not from_cache) else ""
     st.session_state[SessionKeys.JOB_CACHED_PICK_STAGED] = pick_for_list
     st.session_state[SessionKeys.JOB_CACHED_PICK_PREV] = pick_for_list
+
+
+def _ingest_job_posting_url(
+    app: TailoringAppContext,
+    url: str,
+    *,
+    cached_url_set: set[str],
+) -> None:
+    trimmed = (url or "").strip()
+    if not trimmed:
+        raise ValueError("URL is empty.")
+    entry, from_cache = app.job_scraper.get_job_data(trimmed)
+    _apply_job_entry_to_session(app, entry, from_cache=from_cache, cached_url_set=cached_url_set)
+
+
+def _ingest_pasted_posting(
+    app: TailoringAppContext,
+    job_url: str,
+    pasted: str,
+    *,
+    cached_url_set: set[str],
+) -> None:
+    entry = app.job_scraper.summarize_pasted_posting(job_url, pasted)
+    _apply_job_entry_to_session(app, entry, from_cache=False, cached_url_set=cached_url_set)
 
 
 def _pop_job_posting_notices() -> None:
@@ -131,30 +157,46 @@ def render_tailor_page(app: TailoringAppContext) -> None:
     by_url = {e.url: e for e in job_caches}
     n_cached = len(job_caches)
     st.caption(
-        f"Job summaries on disk: **{n_cached}** (under `cache/jobs/`, no extra database). "
-        "Picking a past URL only reads cache — no re-fetch unless the file is missing."
+        f"Saved job summaries on disk: **{n_cached}** (`cache/jobs/`). "
+        "Same listing URL is always the key—whether text came from a fetch or from your paste."
+    )
+
+    st.radio(
+        "How do you want to provide the posting?",
+        options=["url", "paste"],
+        format_func=lambda v: (
+            "Fetch from URL" if v == "url" else "Paste job description (anti-bot / blocked pages)"
+        ),
+        horizontal=True,
+        key=SessionKeys.JOB_INPUT_MODE,
+        help="Use **Paste** when the site returns almost no text, or job details only show in the browser.",
     )
 
     st.text_input(
-        "New job URL (type here, then Fetch)",
+        "Job posting URL",
         placeholder="https://...",
         key=SessionKeys.JOB_POSTING_URL,
+        help="Required for both modes: this is the listing link stored with the summary and used for tailoring.",
     )
+
+    url_for_job = (st.session_state.get(SessionKeys.JOB_POSTING_URL) or "").strip()
+    input_mode = (st.session_state.get(SessionKeys.JOB_INPUT_MODE) or "url").strip()
 
     if job_caches:
 
         def _format_cached_url(url: str) -> str:
             if not url:
-                return "— New URL: use the field above, or select a past job here —"
+                return "— Pick a saved job, or use a new URL above —"
             e = by_url[url]
             c = (e.summary.company or "(company?)").strip() or "?"
             t = (e.summary.title or "(title?)").strip() or "?"
             at = f"{e.cached_at:%Y-%m-%d %H:%M} UTC" if e.cached_at else "?"
             short = url if len(url) <= 64 else f"{url[:61]}…"
-            return f"{c} — {t}  ·  {at}  ·  {short}"
+            tag = " · pasted text" if e.source == "manual" else ""
+            return f"{c} — {t}{tag}  ·  {at}  ·  {short}"
 
         st.selectbox(
-            f"Or load a previously cached job URL ({n_cached})",
+            f"Load a previously saved job ({n_cached})",
             options=[""] + [e.url for e in job_caches],
             key=SessionKeys.JOB_CACHED_PICK,
             format_func=_format_cached_url,
@@ -176,15 +218,52 @@ def render_tailor_page(app: TailoringAppContext) -> None:
             st.session_state.get(SessionKeys.JOB_CACHED_PICK, "") or ""
         )
 
-    url_for_fetch = (st.session_state.get(SessionKeys.JOB_POSTING_URL) or "").strip()
-    if st.button("Fetch / Summarize Job", disabled=not bool(url_for_fetch)):
-        try:
-            logger.info("Fetch job: url=%s", url_for_fetch)
-            _ingest_job_posting_url(app, url_for_fetch, cached_url_set=cached_url_set)
-            st.rerun()
-        except Exception as exc:
-            logger.exception("Job fetch/summarize failed")
-            st.error(str(exc))
+    if input_mode == "url":
+        st.caption(
+            "We **GET** the URL and extract visible text. Some sites block scrapers or ship empty "
+            "shells—if the job JSON is empty, switch to **Paste** and copy the description from your browser."
+        )
+        if st.button("Fetch / summarize from URL", disabled=not bool(url_for_job)):
+            try:
+                logger.info("Fetch job: url=%s", url_for_job)
+                _ingest_job_posting_url(app, url_for_job, cached_url_set=cached_url_set)
+                st.rerun()
+            except Exception as exc:
+                logger.exception("Job fetch/summarize failed")
+                st.error(str(exc))
+    else:
+        st.caption(
+            f"Paste the **full job description** (title, requirements, responsibilities). "
+            f"Minimum **{MIN_MANUAL_PASTE_CHARS}** characters. We still save under the URL above "
+            "so tailoring and disk cache match the listing you applied to."
+        )
+        st.text_area(
+            "Pasted job posting",
+            height=280,
+            key=SessionKeys.JOB_PASTE_TEXT,
+            placeholder="Paste from the job page (plain text is fine)…",
+            label_visibility="visible",
+        )
+        pasted = (st.session_state.get(SessionKeys.JOB_PASTE_TEXT) or "").strip()
+        can_paste = bool(url_for_job) and len(pasted) >= MIN_MANUAL_PASTE_CHARS
+        if st.button(
+            "Summarize pasted text",
+            type="primary",
+            disabled=not can_paste,
+            help=f"Needs a URL and at least {MIN_MANUAL_PASTE_CHARS} characters of posting text.",
+        ):
+            try:
+                logger.info("Summarize pasted job: url=%s paste_len=%s", url_for_job, len(pasted))
+                _ingest_pasted_posting(
+                    app,
+                    url_for_job,
+                    pasted,
+                    cached_url_set=cached_url_set,
+                )
+                st.rerun()
+            except Exception as exc:
+                logger.exception("Pasted job summarize failed")
+                st.error(str(exc))
 
     job_entry: JobCacheEntry | None = st.session_state.get(SessionKeys.JOB_ENTRY)
     if job_entry:
@@ -239,7 +318,7 @@ def render_tailor_page(app: TailoringAppContext) -> None:
                     entry = job_entry
                     if entry is None:
                         st.warning(
-                            'No job loaded. Click "Fetch / Summarize Job" first, then tailor again.'
+                            "No job loaded. Fetch from URL, paste the posting, or load a saved job first."
                         )
                     else:
                         logger.info(
