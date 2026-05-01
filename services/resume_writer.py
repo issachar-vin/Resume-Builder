@@ -20,7 +20,11 @@ from services.markdown_resume import (
     parse_resume_markdown,
     strip_gap_flags_section,
 )
-from services.prompts import CLAUDE_TAILOR_SYSTEM, claude_tailor_user_message
+from services.prompts import (
+    CLAUDE_TAILOR_SYSTEM,
+    claude_tailor_user_message,
+    claude_tailor_user_message_base_resume,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -46,18 +50,29 @@ class ResumeWriterService:
         self.jinja_env.filters["latex_escape"] = latex_escape
 
     def tailor_with_claude(
-        self, resume_markdown: str, job_data: JobData, job_hash: str
+        self,
+        resume_markdown: str,
+        job_data: JobData,
+        job_hash: str,
+        *,
+        base_resume_only: bool = False,
     ) -> tuple[str, UsageStats]:
         """Run Claude tailoring, save ``cache/tailored/<job_hash>.md``, return markdown + usage."""
         if not self.client:
             raise ValueError("ANTHROPIC_API_KEY is required for resume tailoring.")
 
         logger.info(
-            "Claude tailor_with_claude model=%s job_hash=%s company=%r chars=%s",
+            "Claude tailor_with_claude model=%s job_hash=%s company=%r base_only=%s chars=%s",
             self.settings.claude_model,
             job_hash,
             job_data.company,
+            base_resume_only,
             len(resume_markdown),
+        )
+        user_content = (
+            claude_tailor_user_message_base_resume()
+            if base_resume_only
+            else claude_tailor_user_message(json.dumps(job_data.model_dump(mode="json"), indent=2))
         )
         response = self.client.beta.messages.create(
             model=self.settings.claude_model,
@@ -71,14 +86,7 @@ class ResumeWriterService:
                     "cache_control": {"type": "ephemeral"},
                 },
             ],
-            messages=[
-                {
-                    "role": "user",
-                    "content": claude_tailor_user_message(
-                        json.dumps(job_data.model_dump(mode="json"), indent=2)
-                    ),
-                }
-            ],
+            messages=[{"role": "user", "content": user_content}],
         )
 
         tailored_markdown = self._extract_text(response)

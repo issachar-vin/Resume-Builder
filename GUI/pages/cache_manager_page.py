@@ -30,7 +30,10 @@ def render_cache_manager_page(app: TailoringAppContext) -> None:
             with st.container(border=True):
                 st.write(f"**Hash:** {entry.hash}")
                 st.write(f"**URL:** {entry.url}")
-                st.write(f"**Source:** {entry.source} (url = HTTP fetch, manual = pasted text)")
+                st.write(
+                    f"**Source:** {entry.source} — fetch, pasted posting, "
+                    "(**base** is synthetic and excluded from this list)."
+                )
                 st.write(f"**Company / Title:** {entry.summary.company} / {entry.summary.title}")
                 st.write(f"**Cached at:** {entry.cached_at}")
                 if st.button(f"Delete {entry.hash}", key=f"del_{entry.hash}"):

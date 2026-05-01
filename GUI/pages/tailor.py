@@ -10,7 +10,7 @@ import streamlit as st
 
 from GUI.app_context import TailoringAppContext
 from GUI.session_keys import SessionKeys
-from models.job import JobCacheEntry
+from models.job import BASE_RESUME_JOB_URL, JobCacheEntry, JobData
 from services.cache_manager import CacheManager, TailoredHistoryItem
 from services.job_scraper import MIN_MANUAL_PASTE_CHARS
 
@@ -74,6 +74,45 @@ def _apply_job_entry_to_session(
     st.session_state[SessionKeys.JOB_CACHED_PICK_PREV] = pick_for_list
 
 
+def _apply_base_resume_mode(app: TailoringAppContext) -> None:
+    """
+    Synthetic job identity (no jobs/*.json row). Editor gets resume.md or saved tailored/base file.
+    """
+    if not app.cache_manager.resume_exists():
+        raise ValueError("resume.md does not exist yet. Create it from My Resume or LaTeX first.")
+
+    cm = app.cache_manager
+    h = cm.url_hash(BASE_RESUME_JOB_URL)
+    entry = JobCacheEntry(
+        url=BASE_RESUME_JOB_URL,
+        hash=h,
+        cached_at=datetime.now(timezone.utc),
+        raw_text_length=0,
+        summary=JobData(),
+        source="base",
+    )
+    st.session_state[SessionKeys.JOB_ENTRY] = entry
+    cached_tailored = cm.load_tailored_markdown(h)
+    base_md = cm.read_resume_markdown()
+    if cached_tailored is not None:
+        st.session_state[SessionKeys.TAILORED_MARKDOWN] = cached_tailored
+        st.session_state[SessionKeys.LAST_TAILORED_TEX_PATH] = ""
+        st.session_state[SessionKeys.NOTICE_TAILORED_LOADED] = (
+            "Loaded saved markdown for base-resume mode from disk."
+        )
+    else:
+        st.session_state[SessionKeys.TAILORED_MARKDOWN] = base_md
+        st.session_state[SessionKeys.LAST_TAILORED_TEX_PATH] = ""
+
+    st.session_state[SessionKeys.NOTICE_JOB_SUMMARY] = (
+        "info",
+        "Using **base resume only** — no URL or pasted posting. Markdown starts from resume.md.",
+    )
+    st.session_state[SessionKeys.JOB_URL_PENDING] = ""
+    st.session_state[SessionKeys.JOB_CACHED_PICK_STAGED] = ""
+    st.session_state[SessionKeys.JOB_CACHED_PICK_PREV] = ""
+
+
 def _ingest_job_posting_url(
     app: TailoringAppContext,
     url: str,
@@ -117,7 +156,8 @@ def _pop_job_posting_notices() -> None:
 def render_tailor_page(app: TailoringAppContext) -> None:
     st.title("Tailor Resume")
     st.write(
-        "Fetch a job posting, run Claude tailoring, edit the markdown, then generate LaTeX and PDF."
+        "Load a job posting (or use your base resume), run Claude tailoring, edit markdown, "
+        "then generate LaTeX and PDF."
     )
 
     st.subheader("Resume Source")
@@ -141,7 +181,8 @@ def render_tailor_page(app: TailoringAppContext) -> None:
                 st.error(str(exc))
 
     st.divider()
-    st.subheader("Job Posting")
+    st.subheader("Job posting")
+
     pending_url = st.session_state.pop(SessionKeys.JOB_URL_PENDING, None)
     if pending_url is not None:
         st.session_state[SessionKeys.JOB_POSTING_URL] = pending_url
@@ -158,29 +199,39 @@ def render_tailor_page(app: TailoringAppContext) -> None:
     n_cached = len(job_caches)
     st.caption(
         f"Saved job summaries on disk: **{n_cached}** (`cache/jobs/`). "
-        "Same listing URL is always the key—whether text came from a fetch or from your paste."
+        "**Base resume** mode skips Gemini job parsing entirely."
     )
 
     st.radio(
-        "How do you want to provide the posting?",
-        options=["url", "paste"],
+        "Target for this run",
+        options=["url", "paste", "base"],
         format_func=lambda v: (
-            "Fetch from URL" if v == "url" else "Paste job description (anti-bot / blocked pages)"
+            "Fetch from URL"
+            if v == "url"
+            else ("Paste job description" if v == "paste" else "Base resume only (no job posting)")
         ),
         horizontal=True,
         key=SessionKeys.JOB_INPUT_MODE,
-        help="Use **Paste** when the site returns almost no text, or job details only show in the browser.",
+        help="Use **Base resume** to export or lightly polish without a listing. URL and paste modes run Gemini on the posting text.",
     )
 
+    input_mode = (st.session_state.get(SessionKeys.JOB_INPUT_MODE) or "url").strip()
+
+    url_field_disabled = input_mode == "base"
     st.text_input(
         "Job posting URL",
-        placeholder="https://...",
+        placeholder="https://..." if not url_field_disabled else "(not used in base-only mode)",
         key=SessionKeys.JOB_POSTING_URL,
-        help="Required for both modes: this is the listing link stored with the summary and used for tailoring.",
+        disabled=url_field_disabled,
+        help="Required for listings (URL / paste). Disabled when **Base resume only** is selected.",
     )
+    if input_mode == "base":
+        st.caption(
+            "No Gemini job parsing. Claude **Tailor** can still run using a **general** polish prompt. "
+            "Edit the markdown below and export PDF as usual."
+        )
 
     url_for_job = (st.session_state.get(SessionKeys.JOB_POSTING_URL) or "").strip()
-    input_mode = (st.session_state.get(SessionKeys.JOB_INPUT_MODE) or "url").strip()
 
     if job_caches:
 
@@ -231,7 +282,7 @@ def render_tailor_page(app: TailoringAppContext) -> None:
             except Exception as exc:
                 logger.exception("Job fetch/summarize failed")
                 st.error(str(exc))
-    else:
+    elif input_mode == "paste":
         st.caption(
             f"Paste the **full job description** (title, requirements, responsibilities). "
             f"Minimum **{MIN_MANUAL_PASTE_CHARS}** characters. We still save under the URL above "
@@ -264,11 +315,26 @@ def render_tailor_page(app: TailoringAppContext) -> None:
             except Exception as exc:
                 logger.exception("Pasted job summarize failed")
                 st.error(str(exc))
+    else:
+        if st.button("Use base resume for this run", type="primary"):
+            try:
+                logger.info("Base resume mode (no job posting)")
+                _apply_base_resume_mode(app)
+                st.rerun()
+            except Exception as exc:
+                logger.exception("Base resume mode failed")
+                st.error(str(exc))
 
     job_entry: JobCacheEntry | None = st.session_state.get(SessionKeys.JOB_ENTRY)
     if job_entry:
         st.markdown("### Job Summary")
-        st.json(job_entry.model_dump(mode="json"))
+        if job_entry.source == "base":
+            st.info(
+                "No job posting is loaded. The editor uses **cache/resume.md** (or your last "
+                f"saved markdown for this mode). Internal id: `{job_entry.hash}`."
+            )
+        else:
+            st.json(job_entry.model_dump(mode="json"))
 
     tailored_hist = app.cache_manager.list_tailored_history()
     if tailored_hist:
@@ -284,9 +350,20 @@ def render_tailor_page(app: TailoringAppContext) -> None:
             pick = st.session_state.get(SessionKeys.TAILOR_HISTORY_PICK)
             if isinstance(pick, str) and pick:
                 loaded = app.cache_manager.load_job_by_hash(pick)
+                base_hist_hash = app.cache_manager.url_hash(BASE_RESUME_JOB_URL)
                 if loaded:
                     st.session_state[SessionKeys.JOB_ENTRY] = loaded
                     st.session_state[SessionKeys.JOB_URL_PENDING] = loaded.url
+                elif pick == base_hist_hash:
+                    st.session_state[SessionKeys.JOB_ENTRY] = JobCacheEntry(
+                        url=BASE_RESUME_JOB_URL,
+                        hash=pick,
+                        cached_at=datetime.now(timezone.utc),
+                        raw_text_length=0,
+                        summary=JobData(),
+                        source="base",
+                    )
+                    st.session_state[SessionKeys.JOB_URL_PENDING] = BASE_RESUME_JOB_URL
                 md = app.cache_manager.load_tailored_markdown(pick)
                 st.session_state[SessionKeys.TAILORED_MARKDOWN] = md or ""
                 st.session_state[SessionKeys.LAST_TAILORED_TEX_PATH] = ""
@@ -318,7 +395,8 @@ def render_tailor_page(app: TailoringAppContext) -> None:
                     entry = job_entry
                     if entry is None:
                         st.warning(
-                            "No job loaded. Fetch from URL, paste the posting, or load a saved job first."
+                            "No job loaded. Fetch from URL, paste the posting, load a saved job, "
+                            "or choose **Base resume only** and confirm."
                         )
                     else:
                         logger.info(
@@ -330,6 +408,7 @@ def render_tailor_page(app: TailoringAppContext) -> None:
                             resume_markdown=resume_md,
                             job_data=entry.summary,
                             job_hash=entry.hash,
+                            base_resume_only=entry.source == "base",
                         )
                         st.session_state[SessionKeys.TAILORED_MARKDOWN] = tailored_md
                         st.session_state[SessionKeys.LAST_TAILORED_TEX_PATH] = ""

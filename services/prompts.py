@@ -93,6 +93,23 @@ def claude_tailor_user_message(job_json: str) -> str:
     """).strip()
 
 
+def claude_tailor_user_message_base_resume() -> str:
+    """User turn when there is no target job (general polish only)."""
+    return textwrap.dedent("""
+        ### Task (base resume — no job posting)
+        There is **no target job** and **no job JSON**. Do **not** tailor to a role, do **not**
+        optimize keywords for a posting, and **omit** `## Gap Flags` entirely (there is nothing
+        to compare against).
+
+        Using the system output shape and hard rules about **facts** and Markdown structure,
+        produce a **general-purpose** resume: tighten wording, improve scannability, remove
+        obvious repetition. Under each experience, keep **at most two** `- ` bullets, choosing
+        the strongest for a **general** reader (not role-specific).
+
+        Return **Markdown only** (no preamble or commentary).
+    """).strip()
+
+
 # ---------------------------------------------------------------------------
 # Google Gemini — LaTeX resume → structured JSON (first-time import)
 # ---------------------------------------------------------------------------

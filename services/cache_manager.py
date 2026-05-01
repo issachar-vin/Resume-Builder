@@ -11,7 +11,7 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any
 
-from models.job import JobCacheEntry, UsageStats
+from models.job import BASE_RESUME_JOB_URL, JobCacheEntry, UsageStats
 
 logger = logging.getLogger(__name__)
 
@@ -160,18 +160,30 @@ class CacheManager:
         return path
 
     def list_tailored_history(self) -> list[TailoredHistoryItem]:
-        """Newest first: rows for each job hash with tailored markdown and matching job JSON."""
+        """Newest first: tailored markdown paired with ``jobs/*.json`` when present; synthetic row for base-only."""
         items: list[TailoredHistoryItem] = []
         if not self.tailored_dir.is_dir():
             return items
+        base_h = self.url_hash(BASE_RESUME_JOB_URL)
         for path in sorted(
             self.tailored_dir.glob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True
         ):
             job_hash = path.stem
             entry = self.load_job_by_hash(job_hash)
-            if not entry:
-                continue
             mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
+            if not entry:
+                if job_hash != base_h:
+                    continue
+                items.append(
+                    TailoredHistoryItem(
+                        job_hash=job_hash,
+                        company="Base resume",
+                        title="No job posting",
+                        url=BASE_RESUME_JOB_URL,
+                        updated_at=mtime,
+                    )
+                )
+                continue
             items.append(
                 TailoredHistoryItem(
                     job_hash=job_hash,
@@ -192,7 +204,11 @@ class CacheManager:
             except Exception as exc:
                 logger.warning("Skipping invalid job cache file %s: %s", file, exc)
                 continue
-        return sorted(entries, key=lambda x: x.cached_at, reverse=True)
+        return sorted(
+            (e for e in entries if e.url != BASE_RESUME_JOB_URL),
+            key=lambda x: x.cached_at,
+            reverse=True,
+        )
 
     def delete_job_cache(self, job_hash: str) -> bool:
         path = self.jobs_dir / f"{job_hash}.json"

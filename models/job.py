@@ -5,6 +5,9 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+# Sentinel URL / cache identity for “no job posting” (not written to disk as a normal job scrape).
+BASE_RESUME_JOB_URL = "resume://base"
+
 
 class JobData(BaseModel):
     title: str = ""
@@ -22,9 +25,9 @@ class JobCacheEntry(BaseModel):
     cached_at: datetime
     raw_text_length: int
     summary: JobData
-    source: Literal["url", "manual"] = Field(
+    source: Literal["url", "manual", "base"] = Field(
         default="url",
-        description="url: text from HTTP fetch; manual: user pasted the posting (same listing URL).",
+        description="url: HTTP fetch; manual: pasted posting; base: no job, use resume only.",
     )
 
 
